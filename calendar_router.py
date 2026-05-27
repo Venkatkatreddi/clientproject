@@ -4,17 +4,16 @@ from sqlalchemy import extract, func
 from datetime import date
 import calendar as pycalendar
 from typing import List
-
 from db_dependencies import get_db, admin_only, get_current_user
 from models import Calendar, DayStatus
 from timesheet_models import Timesheet, Leave
 from schemas import CalendarResponse, CalendarUpdate, CalendarWithHoursResponse
-
+from models import PublicHoliday
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
 
 
 # ✅ AUTO GENERATE + SHOW HOURS
-@router.get("/month/{year}/{month}", response_model=List[CalendarWithHoursResponse])
+'''@router.get("/month/{year}/{month}", response_model=List[CalendarWithHoursResponse])
 def get_calendar_by_month(
     year: int,
     month: int,
@@ -71,7 +70,40 @@ def get_calendar_by_month(
         .all()
     )
 
-    return results
+    return results'''
+
+@router.post("/public-holiday")
+def add_public_holiday(
+    holiday_date: date,
+    description: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    # Check already exists
+    existing = db.query(PublicHoliday).filter(
+        PublicHoliday.holiday_date == holiday_date
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Public holiday already exists"
+        )
+
+    new_holiday = PublicHoliday(
+        holiday_date=holiday_date,
+        description=description
+    )
+
+    db.add(new_holiday)
+    db.commit()
+    db.refresh(new_holiday)
+
+    return {
+        "message": "Public holiday added successfully",
+        "data": new_holiday
+    }
 
 
 # ✅ Admin update day status
@@ -108,7 +140,7 @@ def get_public_holidays(
 
 from datetime import datetime, timedelta
 
-@router.get("/date-range")
+'''@router.get("/date-range")
 def get_month_data(
     month: int,
     year: int,
@@ -216,4 +248,255 @@ def get_month_data(
 
     response["weekly_hours"] = round(current_week_total, 2)
 
+    return response'''
+
+@router.get("/date-range")
+def get_month_data(
+    month: int,
+    year: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    from datetime import datetime, timedelta, date
+    import calendar
+
+    start = date(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    end = date(year, month, last_day)
+
+    # ✅ Fetch timesheets once
+    timesheets = db.query(Timesheet).filter(
+        Timesheet.user_id == current_user["id"],
+        Timesheet.submitted_date >= start,
+        Timesheet.submitted_date <= end
+    ).all()
+
+    timesheet_map = {t.submitted_date: t for t in timesheets}
+
+    # ✅ Fetch ALL leaves
+    leaves = db.query(Leave).filter(
+        Leave.user_id == current_user["id"],
+        Leave.start_date <= end,
+        Leave.end_date >= start
+    ).all()
+
+    # ✅ Leave map with status
+    leave_map = {}
+
+    for leave in leaves:
+
+        current_leave = leave.start_date
+
+        while current_leave <= leave.end_date:
+
+            leave_map[current_leave] = leave.status.lower()
+
+            current_leave += timedelta(days=1)
+
+    # ✅ Fetch calendar
+    calendar_days = db.query(Calendar).filter(
+        Calendar.date >= start,
+        Calendar.date <= end
+    ).all()
+
+    calendar_map = {
+        c.date: c.status
+        for c in calendar_days
+    }
+
+    # ✅ Fetch public holidays
+    public_holidays = db.query(PublicHoliday).filter(
+        PublicHoliday.holiday_date >= start,
+        PublicHoliday.holiday_date <= end
+    ).all()
+
+    public_holiday_map = {
+        p.holiday_date: p.description
+        for p in public_holidays
+    }
+
+    response = {
+        "date": {},
+        "weekly_hours": 0
+    }
+
+    today = datetime.today().date()
+
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=4)
+
+    current_week_total = 0
+
+    current = start
+
+    while current <= end:
+
+        holiday_description = None
+
+        # 🔹 Leave check first (priority)
+        if current in leave_map:
+
+            leave_status = leave_map[current]
+
+            if leave_status == "pending":
+                status = "pending"
+
+            elif leave_status == "approved":
+                status = "leave"
+
+            elif leave_status == "rejected":
+                status = "rejected"
+
+            else:
+                status = "leave"
+
+        # 🔹 Public holiday check
+        elif current in public_holiday_map:
+
+            status = "public_holiday"
+
+            holiday_description = public_holiday_map[current]
+
+        # 🔹 Normal calendar status
+        else:
+
+            status = calendar_map.get(current, "normal")
+
+        # ✅ Timesheet data
+        if current in timesheet_map:
+
+            ts = timesheet_map[current]
+
+            daily_hours = round(ts.total_hours, 2)
+
+            activities = [
+                {
+                    "project_name": a.get("project_name") or "",
+                    "task_category": a.get("task_name") or "",
+                    "start_time": a.get("start_time"),
+                    "end_time": a.get("end_time"),
+                    "hours": round(float(a.get("hours", 0)), 2)
+                }
+                for a in ts.activities
+            ]
+
+        else:
+
+            daily_hours = 0
+            activities = []
+
+        # ✅ Weekly hours
+        if week_start <= current <= week_end:
+
+            current_week_total += daily_hours
+
+        # ✅ Final response
+        response["date"][current.strftime("%d-%m-%Y")] = {
+
+            "status": status,
+
+            "description": holiday_description,
+
+            "hours": daily_hours,
+
+            "logged_activities": activities
+        }
+
+        current += timedelta(days=1)
+
+    response["weekly_hours"] = round(current_week_total, 2)
+
     return response
+
+from datetime import datetime
+from sqlalchemy import extract
+
+@router.get("/public-holidays/current-year")
+def get_current_year_public_holidays(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    current_year = datetime.now().year
+
+    holidays = (
+        db.query(PublicHoliday)
+        .filter(
+            extract("year", PublicHoliday.holiday_date) == current_year
+        )
+        .order_by(PublicHoliday.holiday_date)
+        .all()
+    )
+
+    return holidays
+
+@router.get("/public-holidays/year/{year}")
+def get_selected_year_public_holidays(
+    year: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    holidays = (
+        db.query(PublicHoliday)
+        .filter(
+            extract("year", PublicHoliday.holiday_date) == year
+        )
+        .order_by(PublicHoliday.holiday_date)
+        .all()
+    )
+
+    return holidays
+
+@router.get("/public-holidays/date/{holiday_date}")
+def get_selected_date_public_holiday(
+    holiday_date: date,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    holiday = (
+        db.query(PublicHoliday)
+        .filter(
+            PublicHoliday.holiday_date == holiday_date
+        )
+        .order_by(PublicHoliday.holiday_date)
+        .all()
+    )
+
+    return holiday
+
+@router.delete("/public-holidays/{holiday_id}")
+def delete_public_holiday(
+    holiday_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    # ✅ Only admin/super admin can delete
+    if current_user["role"] not in ["admin", "super admin"]:
+
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin can delete public holidays"
+        )
+
+    holiday = db.query(PublicHoliday).filter(
+        PublicHoliday.id == holiday_id
+    ).first()
+
+    if not holiday:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Public holiday not found"
+        )
+
+    db.delete(holiday)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Public holiday deleted successfully"
+    }
