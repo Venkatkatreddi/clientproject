@@ -2,7 +2,7 @@ import os
 
 SECRET_KEY = os.getenv("SECRET_KEY", "secret123")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 120
 REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 # Upload directory - absolute path based on project root
