@@ -9,7 +9,9 @@ class TimesheetCreate(BaseModel):
     task_name: str
     start_time: time
     end_time: time
-    break_time: int  
+    break_time: int
+    task_description: Optional[str] = None
+
 # leave_schemas.py
 
 class LeaveApply(BaseModel):
