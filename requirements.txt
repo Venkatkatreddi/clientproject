@@ -10,3 +10,7 @@ pydantic[email]
 email-validator
 google-cloud-storage
 apscheduler
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
