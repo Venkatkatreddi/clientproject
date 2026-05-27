@@ -5,6 +5,8 @@ from pydantic import BaseModel, HttpUrl
 from datetime import date
 from typing import Optional
 from typing import List
+from datetime import datetime
+
 class ClientStatus(str, Enum):
     active = "A"
     terminated = "T"
@@ -20,6 +22,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str
     role: str
+    employee_id: Optional[str] = None
+    client_id: Optional[int] = None
+    user_type: Optional[str] = None
+    name: Optional[str] = None
 
 class UserCreate(BaseModel):
    
@@ -34,6 +40,8 @@ class UserCreate(BaseModel):
     location: Optional[str] = None
     reporting_to: Optional[str] = None
     HR: Optional[str] = None
+    notes: Optional[str] = None
+
 
 class UserLimitedUpdate(BaseModel):
     email: Optional[str] = None
@@ -45,16 +53,28 @@ class UserLimitedUpdate(BaseModel):
     reporting_to: Optional[str] = None
     HR: Optional[str] = None
     password: Optional[str] = None
+    notes: Optional[str] = None
+
 
 class UserResponse(BaseModel):
-    employee_id: Optional[str] = None
-    first_name: str | None = None
-    last_name: str | None = None
-    mobile: str | None = None
-    designation: str | None = None
-    email: str
-    role: str
-
+    employee_id: str
+    email: Optional[str]
+    role: Optional[str]
+    first_name: Optional[str]
+    last_name: Optional[str]
+    mobile: Optional[str]
+    designation: Optional[str]
+    reporting_to: Optional[str]
+    reporting_to_name: Optional[str]
+    HR: Optional[str]
+    hr_name: Optional[str]
+    aadhaar_number: Optional[str]
+    start_date: Optional[date]
+    end_date: Optional[date]
+    location: Optional[str]
+    notes: Optional[str]
+    is_active: Optional[bool]
+    
     class Config:
         from_attributes = True
 
@@ -67,9 +87,10 @@ class ClientCreate(BaseModel):
 
 class ClientResponse(BaseModel):
     id: int
-    client_name: str
-    mobile: str
+    client_name: Optional[str]
+    mobile: Optional[str]
     email: Optional[str]
+    password: Optional[str] =None
     technology: Optional[str]
     status: Optional[str]
     professional_role: Optional[str]
@@ -77,7 +98,11 @@ class ClientResponse(BaseModel):
     location: Optional[str]
     employee_name: Optional[str]
     employee_id: Optional[str]
+    start_date: Optional[str]
+    end_date: Optional[str]
     notes: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -132,9 +157,9 @@ class CredentialUpdate(BaseModel):
 
 class ReportCreate(BaseModel):
     company_name:str
-    recruiter_name:str
-    recruiter_contact:int
-    recruiter_email:str
+    recruiter_name:Optional[str]=None
+    recruiter_contact:Optional[str]=None
+    recruiter_email:Optional[str]=None
     type:str
     status:Optional[str]=None
     date:str
@@ -142,9 +167,9 @@ class ReportCreate(BaseModel):
 
 class ReportUpdate(BaseModel):
     company_name: Optional[str]
-    recruiter_name: Optional[str]
-    recruiter_contact: Optional[int]
-    recruiter_email: Optional[str]
+    recruiter_name: Optional[str]=None
+    recruiter_contact: Optional[str]=None
+    recruiter_email: Optional[str]=None
     type: Optional[str]
     status: Optional[str]
     date: Optional[date]
@@ -190,3 +215,35 @@ class CalendarWithHoursResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+
+
+class ClientUserCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    password: str
+    role: str 
+
+
+
+class ClientUserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    password: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[str] = None
+    
+class ClientUserResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+    role: str
+    
+
+    class Config:
+        orm_mode = True
