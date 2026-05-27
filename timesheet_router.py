@@ -83,6 +83,7 @@ def create_draft(
         start_time=data.start_time,
         end_time=data.end_time,
         break_time=data.break_time,
+        task_description=data.task_description,
         hours=calculated_hours
     )
 
@@ -94,7 +95,7 @@ def create_draft(
 
 
 
-@router.post("/update/{draft_id}") #update
+'''@router.post("/update/{draft_id}") #update
 def update_draft(
     draft_id: int,
     data: TimesheetCreate,
@@ -127,9 +128,58 @@ def update_draft(
     db.commit()
     db.refresh(draft)
 
+    return {"message": "Draft updated successfully"}'''
+
+@router.post("/update/{draft_id}")
+def update_draft(
+    draft_id: int,
+    data: TimesheetCreate,
+    db: Session = Depends(get_db),
+    token_user=Depends(get_current_user)
+):
+    db_user = get_db_user(db, token_user)
+
+    draft = db.query(DraftTimesheet).filter(
+        DraftTimesheet.id == draft_id,
+        DraftTimesheet.user_id == db_user.id
+    ).first()
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    # ✅ CHECK IF TIMESHEET ALREADY SUBMITTED
+    submitted = db.query(Timesheet).filter(
+        Timesheet.user_id == db_user.id,
+        Timesheet.submitted_date == draft.work_date
+    ).first()
+
+    if submitted:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit draft after timesheet submission"
+        )
+
+    calculated_hours = calculate_hours(
+        data.start_time,
+        data.end_time,
+        data.break_time
+    )
+
+    draft.project_name = data.project_name
+    draft.task_name = data.task_name
+    draft.start_time = data.start_time
+    draft.end_time = data.end_time
+    draft.break_time = data.break_time
+    draft.hours = calculated_hours
+    draft.task_description = data.task_description
+
+
+    db.commit()
+    db.refresh(draft)
+
     return {"message": "Draft updated successfully"}
 
-@router.post("/delete/{draft_id}") #delete
+'''@router.post("/delete/{draft_id}") #delete
 def delete_draft(
     draft_id: int,
     db: Session = Depends(get_db),
@@ -144,6 +194,39 @@ def delete_draft(
 
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
+
+    db.delete(draft)
+    db.commit()
+
+    return {"message": "Draft deleted successfully"}'''
+
+@router.post("/delete/{draft_id}")
+def delete_draft(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    token_user=Depends(get_current_user)
+):
+    db_user = get_db_user(db, token_user)
+
+    draft = db.query(DraftTimesheet).filter(
+        DraftTimesheet.id == draft_id,
+        DraftTimesheet.user_id == db_user.id
+    ).first()
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    # ✅ CHECK IF TIMESHEET ALREADY SUBMITTED
+    submitted = db.query(Timesheet).filter(
+        Timesheet.user_id == db_user.id,
+        Timesheet.submitted_date == draft.work_date
+    ).first()
+
+    if submitted:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete draft after timesheet submission"
+        )
 
     db.delete(draft)
     db.commit()
@@ -165,7 +248,7 @@ def get_drafts_by_date(
 
     return drafts
 
-@router.post("/submit")
+'''@router.post("/submit")
 def submit_timesheet(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -198,10 +281,10 @@ def submit_timesheet(
 
     total_hours = round(sum(d.hours for d in drafts), 2)
     # ✅ New condition: Restrict submission above 8 hours
-    if total_hours > 8:
+    if total_hours > 12:
         raise HTTPException(
             status_code=400,
-            detail="Total working hours cannot exceed 8 hours per day"
+            detail="Total working hours cannot exceed 12 hours per day"
         )
 
     activities = []
@@ -231,6 +314,129 @@ def submit_timesheet(
     return {
         "message": "Timesheet submitted successfully",
         "total_hours": total_hours
+    }'''
+
+from datetime import date, timedelta
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+
+@router.post("/submit")
+def submit_timesheet(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    today = date.today()
+
+    # ✅ Allow only Monday to Friday
+    # Monday = 0, Sunday = 6
+    if today.weekday() >= 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Timesheet submission allowed only from Monday to Friday"
+        )
+
+    # ✅ Get today's drafts
+    drafts = db.query(DraftTimesheet).filter(
+        DraftTimesheet.user_id == current_user["id"],
+        DraftTimesheet.work_date == today
+    ).all()
+
+    if not drafts:
+        raise HTTPException(
+            status_code=400,
+            detail="No drafts found for today"
+        )
+
+    # ✅ Check already submitted
+    existing = db.query(Timesheet).filter(
+        Timesheet.user_id == current_user["id"],
+        Timesheet.submitted_date == today
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Timesheet already submitted for today"
+        )
+
+    # ✅ Calculate total daily hours
+    total_hours = round(sum(d.hours for d in drafts), 2)
+
+    # ✅ Daily limit
+    if total_hours > 12:
+        raise HTTPException(
+            status_code=400,
+            detail="Total working hours cannot exceed 12 hours per day"
+        )
+
+    # ✅ Current week range
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=4)  # Monday-Friday only
+
+    # ✅ Fetch weekly submitted timesheets
+    weekly_timesheets = db.query(Timesheet).filter(
+        Timesheet.user_id == current_user["id"],
+        Timesheet.submitted_date >= start_of_week,
+        Timesheet.submitted_date <= end_of_week
+    ).all()
+
+    # ✅ Weekly hours calculation
+    weekly_hours = sum(t.total_hours for t in weekly_timesheets)
+
+    weekly_total = weekly_hours + total_hours
+
+    # ✅ Weekly limit
+    if weekly_total > 40:
+        raise HTTPException(
+            status_code=400,
+            detail="Weekly working hours cannot exceed 40 hours"
+        )
+
+    # ✅ Working days validation
+    working_days = set()
+
+    for t in weekly_timesheets:
+        working_days.add(t.submitted_date)
+
+    working_days.add(today)
+
+    if len(working_days) > 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Only 5 working days allowed per week"
+        )
+
+    # ✅ Activities
+    activities = []
+
+    for d in drafts:
+        activities.append({
+            "project_name": d.project_name,
+            "task_name": d.task_name,
+            "start_time": str(d.start_time),
+            "end_time": str(d.end_time),
+            "break_minutes": d.break_time,
+            "task_description": d.task_description,
+            "hours": d.hours
+        })
+
+    # ✅ Create timesheet
+    timesheet = Timesheet(
+        user_id=current_user["id"],
+        employee_id=current_user["employee_id"],
+        submitted_date=today,
+        total_hours=total_hours,
+        activities=activities
+    )
+
+    db.add(timesheet)
+    db.commit()
+
+    return {
+        "message": "Timesheet submitted successfully",
+        "total_hours": total_hours,
+        "weekly_total_hours": weekly_total
     }
 
 
@@ -289,45 +495,81 @@ def apply_leave(
     }
 
 
+
 @router.get("/admin/leave-requests")
 def get_leave_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
 
-    # If admin → get all
-    if current_user["role"] == "admin":
-        leaves = db.query(Leave).join(
-            User, Leave.user_id == User.id
-        ).all()
+    # 🔹 Super Admin & Admin
+    # Get all leave requests
+    if current_user["role"] in ["admin", "super admin"]:
 
-    # If manager → get reporting employees using employee_id
+        leaves = (
+            db.query(Leave)
+            .join(User, Leave.user_id == User.id)
+            .order_by(
+                Leave.updated_at.desc(),
+                Leave.created_at.desc()
+            )
+            .all()
+        )
+
+    # 🔹 Manager/User
+    # Get only reporting employees leave requests
     else:
-        leaves = db.query(Leave).join(
-            User, Leave.user_id == User.id
-        ).filter(
-            User.reporting_to_employee_id == current_user["employee_id"]
-        ).all()
+
+        leaves = (
+            db.query(Leave)
+            .join(User, Leave.user_id == User.id)
+            .filter(
+                User.reporting_to == current_user["employee_id"]
+            )
+            .order_by(
+                Leave.updated_at.desc(),
+                Leave.created_at.desc()
+            )
+            .all()
+        )
 
     result = []
 
     for leave in leaves:
 
-        # Calculate duration
         duration = None
+
         if leave.start_date and leave.end_date:
-            duration = (leave.end_date - leave.start_date).days + 1
+
+            duration = (
+                leave.end_date - leave.start_date
+            ).days + 1
 
         result.append({
+
             "leave_id": leave.id,
+
             "employee_id": leave.user.employee_id,
-            "employee_name": f"{leave.user.first_name or ''} {leave.user.last_name or ''}".strip(),
+
+            "employee_name": (
+                f"{leave.user.first_name or ''} "
+                f"{leave.user.last_name or ''}"
+            ).strip(),
+
             "leave_type": leave.leave_type,
+
             "start_date": leave.start_date,
+
             "end_date": leave.end_date,
+
             "duration": duration,
-            "status": leave.status
-        } )
+
+            "status": leave.status,
+
+            "created_at": leave.created_at,
+
+            "updated_at": leave.updated_at
+        })
 
     return result
 
@@ -352,11 +594,11 @@ def update_leave_status(
         )
 
     # 🚫 Only admin
-    if current_user["role"] != "admin":
+    '''if current_user["role"] != "admin":
         raise HTTPException(
             status_code=403,
             detail="Only admin can update leave status"
-        )
+        )'''
 
     # 🚫 Already processed
     if leave.status != "pending":
