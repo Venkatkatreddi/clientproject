@@ -1,6 +1,21 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Date, Text, Boolean
 from database import Base
 from sqlalchemy.orm import relationship
+from sqlalchemy import Column, DateTime
+from datetime import datetime
+from sqlalchemy.sql import func
+
+
+class BlacklistedToken(Base):
+
+    __tablename__ = "blacklisted_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    token = Column(String, unique=True, index=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class User(Base):
     __tablename__ = "users"
 
@@ -23,6 +38,16 @@ class User(Base):
     photo = Column(String, nullable=True)
     documents = Column(String, nullable=True)  
     profile_pic = Column(String, nullable=True)
+    created_at = Column(
+    DateTime,
+    default=datetime.utcnow
+)
+
+    updated_at = Column(
+    DateTime,
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow
+)
     notes = Column(String, nullable=True)
     
 class Client(Base):
@@ -38,13 +63,24 @@ class Client(Base):
     aadhaar_number = Column(String)
     location = Column(String)
     email = Column(String)
+    password = Column(String)
     photo = Column(String)
     documents = Column(String)  
     source_links = Column(Text, nullable=True)
     link_type = Column(String,nullable=True)
     profile_picture = Column(String, nullable=True)
     notes = Column(String, nullable=True)
-    
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    updated_at = Column(
+    DateTime,
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow
+    )
+
+
 class Application(Base):
     __tablename__ = "applications"
 
@@ -57,6 +93,15 @@ class Application(Base):
     application_link = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     source = Column(String)
+    created_at = Column(
+    DateTime,
+    default=datetime.utcnow
+)
+    updated_at = Column(
+    DateTime,
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow
+)
     
 class Credential(Base):
 
@@ -72,7 +117,16 @@ class Credential(Base):
     password = Column(String,nullable=False)
     notes =  Column(String,nullable=True)
     client = relationship("Client")
+    created_at = Column(
+    DateTime,
+    default=datetime.utcnow
+)
 
+    updated_at = Column(
+    DateTime,
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow
+)
 
 class Reports(Base):
 
@@ -84,13 +138,23 @@ class Reports(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     type = Column(String)
     company_name = Column(String)
-    recruiter_name = Column(String)
-    recruiter_contact = Column(Integer)
-    recruiter_email = Column(String)
+    recruiter_name = Column(String,nullable=True)
+    recruiter_contact = Column(String,nullable=True)
+    recruiter_email = Column(String,nullable=True)
     date = Column(Date)
     status = Column(String, default="PENDING")
-    notes = Column(String)
-    source = Column(String)
+    notes = Column(String,nullable=True)
+    created_at = Column(
+    DateTime,
+    default=datetime.utcnow
+)
+
+    updated_at = Column(
+    DateTime,
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow
+)
+    source = Column(String,nullable=True)
 
 
     #---------------------------calander apis------------------------------------------
@@ -111,3 +175,51 @@ class Calendar(Base):
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, unique=True, nullable=False, index=True)
     status = Column(Enum(DayStatus), default=DayStatus.normal, nullable=False)
+    description = Column(String, nullable=True)
+
+class PublicHoliday(Base):
+    __tablename__ = "public_holidays"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    holiday_date = Column(Date, nullable=False, unique=True)
+
+    description = Column(String, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean
+from sqlalchemy.orm import relationship
+from database import Base
+
+
+class ClientUser(Base):
+    __tablename__ = "client_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    
+
+    role = Column(
+        String,
+        default="client"
+    )
+
+    first_name = Column(String, nullable=False)
+
+    last_name = Column(String, nullable=False)
+
+    email = Column(String, unique=True, nullable=False)
+
+    password = Column(String, nullable=False)
+
+    is_active = Column(Boolean, default=True)
