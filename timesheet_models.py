@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, Time, U
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import date
+from sqlalchemy import Column, DateTime
+from sqlalchemy.sql import func
 
 class DraftTimesheet(Base):
     __tablename__ = "draft_timesheets"
@@ -16,7 +18,9 @@ class DraftTimesheet(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
 
-    break_time = Column(Integer, default=0)  # stored in minutes
+    break_time = Column(Integer, default=0)
+    task_description = Column(String, nullable= True)
+    hours = Column(Float, nullable=False) # stored in minutes
     hours = Column(Float, nullable=False)    # stored in hours
 
    
@@ -29,7 +33,7 @@ class Timesheet(Base):
 
     submitted_date = Column(Date, nullable=False)
     total_hours = Column(Float, nullable=False)
-
+    task_description = Column(String, nullable= True)
     activities = Column(JSON, nullable=False)
 
     __table_args__ = (
@@ -64,3 +68,13 @@ class Leave(Base):
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
     approver = relationship("User", foreign_keys=[approved_by])
+    created_at = Column(
+    DateTime(timezone=True),
+    server_default=func.now()
+)
+
+    updated_at = Column(
+    DateTime(timezone=True),
+    server_default=func.now(),
+    onupdate=func.now()
+)
